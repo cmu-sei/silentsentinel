@@ -1,0 +1,4 @@
+[submodule "testharness/pspy"]
+	path = testharness/pspy
+	url = ../silentsentinel-pspy.git
+	branch = master

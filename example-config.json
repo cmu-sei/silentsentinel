@@ -1,0 +1,18 @@
+{
+    "volumeMountDirectory": "output",
+    "toolUnderTest": [
+        "sh",
+        "-c",
+        "echo \"# test modification\" >> /etc/crontab"
+    ],
+    "tag": "debian",
+    "analysisTools":
+    {
+        "clamscan": true,
+        "coreDumps": false,
+        "pspy": true,
+        "strace": true,
+        "suricata": true
+    },
+    "reportFormat": "all"
+}

@@ -1,0 +1,79 @@
+# <legal>
+# Silent Sentinel
+# 
+# Copyright 2024 Carnegie Mellon University.
+# 
+# NO WARRANTY. THIS CARNEGIE MELLON UNIVERSITY AND SOFTWARE ENGINEERING
+# INSTITUTE MATERIAL IS FURNISHED ON AN "AS-IS" BASIS. CARNEGIE MELLON
+# UNIVERSITY MAKES NO WARRANTIES OF ANY KIND, EITHER EXPRESSED OR IMPLIED, AS
+# TO ANY MATTER INCLUDING, BUT NOT LIMITED TO, WARRANTY OF FITNESS FOR PURPOSE
+# OR MERCHANTABILITY, EXCLUSIVITY, OR RESULTS OBTAINED FROM USE OF THE MATERIAL.
+# CARNEGIE MELLON UNIVERSITY DOES NOT MAKE ANY WARRANTY OF ANY KIND WITH RESPECT
+# TO FREEDOM FROM PATENT, TRADEMARK, OR COPYRIGHT INFRINGEMENT.
+# 
+# Licensed under a MIT (SEI)-style license, please see LICENSE.txt or contact
+# permission@sei.cmu.edu for full terms.
+# 
+# [DISTRIBUTION STATEMENT A] This material has been approved for public release
+# and unlimited distribution.  Please see Copyright notice for non-US Government
+# use and distribution.
+# 
+# This Software includes and/or makes use of Third-Party Software each subject
+# to its own license.
+# 
+# DM24-1586
+# </legal>
+
+services:
+  testharness:
+    build:
+      context: testharness
+      dockerfile: Dockerfile.$tag
+    image: cmusei/silentsentinel-testharness:$tag
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    init: true
+    # Pass needed variables into the container for the entrypoint script, so there is no redundant command line parser
+    environment:
+      - clamscan_enabled
+      - core_dump_analysis_enabled
+      - pspy_enabled
+      - strace_enabled
+      - suricata_enabled
+      - kata_enabled
+    volumes:
+      - $volpath:/vol
+  listeningpost:
+    build:
+      context: listeningpost
+      dockerfile: Dockerfile.$tag
+    image: cmusei/silentsentinel-listeningpost:$tag
+    cap_add:
+      - NET_RAW
+    init: true
+    volumes:
+      - $volpath:/vol
+  reportgeneration:
+    build: reportgeneration
+    image: cmusei/silentsentinel-reportgeneration
+    entrypoint: ["/generate_report.py", "/vol"]
+    volumes:
+      - $volpath:/vol
+  pandoc:
+    build: pandoc
+    image: cmusei/silentsentinel-pandoc
+    volumes:
+      - $volpath:/vol
+  suricata:
+    build: suricata
+    image: cmusei/silentsentinel-suricata
+    volumes:
+      - $volpath:/vol
+    entrypoint: ["/suricata-analysis.sh"]
+  yaf:
+    build: yaf
+    image: cmusei/silentsentinel-yaf
+    volumes:
+      - $volpath:/vol
+    entrypoint: ["/yafscript.sh"]
