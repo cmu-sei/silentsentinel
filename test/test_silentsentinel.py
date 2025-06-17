@@ -1,8 +1,8 @@
 # <legal>
 # Silent Sentinel
-# 
-# Copyright 2024 Carnegie Mellon University.
-# 
+#
+# Copyright 2025 Carnegie Mellon University.
+#
 # NO WARRANTY. THIS CARNEGIE MELLON UNIVERSITY AND SOFTWARE ENGINEERING
 # INSTITUTE MATERIAL IS FURNISHED ON AN "AS-IS" BASIS. CARNEGIE MELLON
 # UNIVERSITY MAKES NO WARRANTIES OF ANY KIND, EITHER EXPRESSED OR IMPLIED, AS
@@ -10,23 +10,24 @@
 # OR MERCHANTABILITY, EXCLUSIVITY, OR RESULTS OBTAINED FROM USE OF THE MATERIAL.
 # CARNEGIE MELLON UNIVERSITY DOES NOT MAKE ANY WARRANTY OF ANY KIND WITH RESPECT
 # TO FREEDOM FROM PATENT, TRADEMARK, OR COPYRIGHT INFRINGEMENT.
-# 
+#
 # Licensed under a MIT (SEI)-style license, please see LICENSE.txt or contact
 # permission@sei.cmu.edu for full terms.
-# 
+#
 # [DISTRIBUTION STATEMENT A] This material has been approved for public release
-# and unlimited distribution.  Please see Copyright notice for non-US Government
+# and unlimited distribution. Please see Copyright notice for non-US Government
 # use and distribution.
-# 
+#
 # This Software includes and/or makes use of Third-Party Software each subject
 # to its own license.
-# 
-# DM24-1586
+#
+# DM25-0550
 # </legal>
 
 import json
 import os
 import platform
+import re
 import shutil
 import tempfile
 import unittest
@@ -88,6 +89,27 @@ class SilentSentinelTest(unittest.TestCase):
                             headers_list.add(line[3:-2])
         return headers_list
 
+    def markdown_report_contains_string(self, regex_pattern) -> bool:
+        """
+        Return True if a provided string or regex pattern is found
+        in the Markdown report, False otherwise.
+        """
+
+        # Retrieve the most recently created Markdown report to search
+        markdown_report_files = sorted(glob(os.path.join(self.tmp_folder_loc, "*.md")))
+        if not markdown_report_files:
+            return False
+
+        markdown_report_filepath = markdown_report_files[-1]
+
+        # Open the Markdown report and search for the regex pattern
+        with open(markdown_report_filepath, 'r') as markdown_report:
+            for line in markdown_report:
+                if re.search(regex_pattern, line):
+                    return True
+
+        return False
+
     def test_usage_message(self):
         session = run(['./silentsentinel.sh'], stdout=PIPE)
         self.assertTrue(b'arguments are missing' in session.stdout, "Testing that correct error message appears for illegal usage")
@@ -129,7 +151,7 @@ class SilentSentinelTest(unittest.TestCase):
                       'Testing that listeningpost-tcpdump pcap file is created')
         self.assertNotEqual(os.stat(os.path.join(listeningpost_loc, 'tcpdump.pcap')).st_size, 0,
                             "Testing that listeningpost pcap file has data in it")
-        
+
         # Test that yaf and fixbuf are correctly ingesting and creating files
         self.assertIn('pcap.ipfix', os.listdir(listeningpost_loc),
                       'Testing that ipfix file is created for listeningpost')
@@ -172,6 +194,17 @@ class SilentSentinelTest(unittest.TestCase):
         self.assertNotIn("suricata-events", report_headers_list)
         self.assertNotIn("suricata-statistics", report_headers_list)
 
+        # Test that YARA was not run, due to no rules.yar file being present
+        self.assertIn('yara-rule-matches.out', os.listdir(testharness_loc),
+                      'Testing that the YARA output file is created')
+        with open(os.path.join(testharness_loc, 'yara-rule-matches.out'), 'r') as yara_matches_output_file:
+            match_file_contents = yara_matches_output_file.read()
+            match_file_contents = match_file_contents.strip()
+            self.assertEqual('YARA was not run.', match_file_contents, 'Unexpected contents in yara-rule-matches.out')
+
+        # Verify that the YARA section with its header doesn't appear in the Markdown report
+        self.assertIn("yara-rule-matches", report_headers_list)
+
         # Check that flows ascii file is created
         self.assertIn("netflow", report_headers_list)
         self.assertIn('netflow.out', os.listdir(listeningpost_loc),
@@ -190,6 +223,20 @@ class SilentSentinelTest(unittest.TestCase):
             self.assertIn('not run', stringsoutfile.read(), "Testing that strings.out had the not run heading")
         self.assertEqual(os.stat(os.path.join(testharness_loc, "strings.err")).st_size, 0,
                          "Testing that no error is thrown to strings.err")
+
+        # Test that the network bandwidth section outputs correctly, including its embedded image file
+        embedded_image_regex_pattern = r"!\[.*\]\(\w+/network-bandwidth-graph\.png\)"
+        self.assertIn("network-bandwidth-graph", report_headers_list)
+        self.assertIn("network-bandwidth-graph.png", os.listdir(testharness_loc),
+                      'Network bandwidth graph image file is not created in testharness subdirectory')
+        self.assertTrue(self.markdown_report_contains_string(embedded_image_regex_pattern), 'Markdown report does not contain embedded image')
+
+        # Test that the disk I/O performance section outputs correctly, including its embedded image file
+        embedded_image_regex_pattern = r"!\[.*\]\(\w+/disk-performance-graph\.png\)"
+        self.assertIn("disk-performance-graph", report_headers_list)
+        self.assertIn("disk-performance-graph.png", os.listdir(testharness_loc),
+                      'Disk I/O performance graph image file is not created in testharness subdirectory')
+        self.assertTrue(self.markdown_report_contains_string(embedded_image_regex_pattern), 'Markdown report does not contain embedded image')
 
         # Test that PANDOC was disabled
         self.assertFalse(glob(os.path.join(self.tmp_folder_loc, '*.pdf')),
@@ -224,6 +271,67 @@ class SilentSentinelTest(unittest.TestCase):
         # Test that the PDF document is created by PANDOC
         self.assertTrue(glob(os.path.join(self.tmp_folder_loc, '*.pdf')),
                             'Confirming that the pdf file is created by pandoc')
+
+    # Only test YARA on a single tag. This requires a custom tool under test that will
+    # exist in the volume mounted directory. Runs in a separate container, so not needed to
+    # run various tags.
+    def test_non_tag_yara(self):
+        # Create YARA rules file and custom tool under test
+        yara_rule_contents = """import "pe"
+
+rule String_Match
+{
+    meta:
+        author = "Bugs Bunny"
+        date = "2025-03-10"
+        description = "Detects for any data exfiltration or tool installation patterns"
+    strings:
+        $Quarantine_Message1 = "install" nocase
+        $Quarantine_Message2 = "upload" nocase
+        $Prevent_Quarantine = "meeting"
+
+    condition:
+        ($Quarantine_Message1 or $Quarantine_Message2) and not $Prevent_Quarantine
+}
+"""
+        yara_rule_file_path = os.path.join(self.tmp_folder_loc, "rules.yar")
+        with open(yara_rule_file_path, "w") as yara_rule_file:
+            yara_rule_file.write(yara_rule_contents)
+
+        tool_under_test_contents = """#!/bin/bash
+
+# This script is meant to intentionally trigger rules set in
+# the rules.yar file.
+
+echo "Let's install a time for our weekly scan"
+echo "Try to install a foreign and untrusted package hahaha"
+echo "Upload the results back to our homebase server"
+"""
+        tool_under_test = os.path.join(self.tmp_folder_loc, "trigger-yara.sh")
+        with open(tool_under_test, "w") as tool_under_test:
+            tool_under_test.write(tool_under_test_contents)
+        os.chmod(tool_under_test.name, 0o555)
+
+        session = run(['./silentsentinel.sh', '-S', '-P', '-C', '-U', '-r', 'm', self.tmp_folder_loc, '/vol/trigger-yara.sh'])
+        self.assertEqual(session.returncode, 0, "Silent Sentinel returned an unexpected exit code, expecting 0 (success)")
+
+        report_headers_list = self.get_headers_list()
+        testharness_loc = os.path.join(self.tmp_folder_loc, 'testharness')
+
+        # Test that YARA was run; output file should contain expected first line
+        self.assertIn('yara-rule-matches.out', os.listdir(testharness_loc),
+                      'Testing that the YARA output file is created')
+        self.assertNotEqual(os.stat(os.path.join(testharness_loc, "yara-rule-matches.out")).st_size, 0,
+                            'Confirming that the YARA output file is not empty')
+        with open(os.path.join(testharness_loc, 'yara-rule-matches.out'), 'r') as yara_matches_output_file:
+            match_file_contents = yara_matches_output_file.readline()
+            match_file_contents = match_file_contents.strip()
+            self.assertEqual('The YARA scan detected the following match(es) in the provided rules:',
+                             match_file_contents,
+                             'Unexpected contents in yara-rule-matches.out')
+
+        # Verify that the YARA section with its header appears in the Markdown report
+        self.assertIn("yara-rule-matches", report_headers_list)
 
     # Testing all tools that will produce output when iptables is run in the container
     @subTestTags
@@ -280,6 +388,10 @@ class SilentSentinelTest(unittest.TestCase):
     # Confirm that no errors are thrown when attempting to start silentsentinel
     @subTestTags
     def test_start_success(self, tag):
+        # Create an empty YARA rules file
+        yara_rule_file_path = os.path.join(self.tmp_folder_loc, "rules.yar")
+        open(yara_rule_file_path, "w").close()
+
         with os.fdopen(os.open(os.path.join(self.tmp_folder_loc, "tool_under_test.sh"), os.O_WRONLY|os.O_CREAT|os.O_TRUNC, 0o777), "w") as f:
             f.write("#!/bin/sh\n# macbeth was here\necho hello\n")
         with open(os.path.join(self.tmp_folder_loc, "wordlist"), "w") as f:
@@ -295,10 +407,8 @@ class SilentSentinelTest(unittest.TestCase):
         testharness_loc = os.path.join(self.tmp_folder_loc, 'testharness')
 
         # Test that reading the contents of crontabs outputs to correct files
-        self.assertTrue(glob(os.path.join(testharness_loc, 'crontabs', '*.out')),
+        self.assertTrue(glob(os.path.join(testharness_loc, 'crontabs', '*.diff')),
                         "Testing crontabs file creation")
-        self.assertTrue(glob(os.path.join(testharness_loc, 'crontabs', '*.err')),
-                        "Testing crontabs stderr file creation")
 
         # Test that reading the contents of memory.stat outputs to correct files
         self.assertTrue(glob(os.path.join(testharness_loc, 'memory-stat', '*.out')),
@@ -352,6 +462,21 @@ class SilentSentinelTest(unittest.TestCase):
         self.assertEqual(os.stat(os.path.join(testharness_loc, "strings.err")).st_size, 0,
                          "Testing that no error is thrown to strings.err")
 
+        # Test that YARA was run
+        self.assertIn('yara-rule-matches.out', os.listdir(testharness_loc),
+                      'Testing that the YARA output file is created')
+        self.assertNotEqual(os.stat(os.path.join(testharness_loc, "yara-rule-matches.out")).st_size, 0,
+                            'Confirming that the YARA output file is not empty')
+        with open(os.path.join(testharness_loc, 'yara-rule-matches.out'), 'r') as yara_matches_output_file:
+            match_file_contents = yara_matches_output_file.read()
+            match_file_contents = match_file_contents.strip()
+            self.assertEqual('The YARA scan did not detect any matches in the provided rules.',
+                             match_file_contents,
+                             'Unexpected output in yara-rule-matches.out')
+
+        # Verify that the YARA section with its header appears in the Markdown report
+        self.assertIn("yara-rule-matches", report_headers_list)
+
     # Confirm that changes made to the crontab files are registered and placed in report generation file
     @subTestTags
     def test_crontab_changes(self, tag):
@@ -360,14 +485,83 @@ class SilentSentinelTest(unittest.TestCase):
 
         report_headers_list = self.get_headers_list()
         testharness_loc = os.path.join(self.tmp_folder_loc, 'testharness')
-        self.assertNotEqual(os.stat(glob(os.path.join(testharness_loc, 'crontabs', '*.out'))[0]).st_size, 0,
-                            "Testing crontabs output to file")
         self.assertTrue(glob(os.path.join(testharness_loc, 'crontabs', '*.diff')),
                         "Testing crontabs diff file creation")
         self.assertIn('crontabs', report_headers_list,
                       "Testing that crontab is in the report file")
         self.assertNotEqual(os.stat(os.path.join(testharness_loc, 'crontabs', 'crontabs_0.diff')).st_size, 0,
                             "Testing that the differences between crontab files are recorded")
+
+    # Verify that we can override the default analysis target (e.g. clamscan, strings, etc.)
+    # No dirty words should be found on the tool under test, since we override to search
+    # on other analysis target locations.
+    def test_override_analysis_targets(self):
+        # Create a test JSON config file and pass it to Silent Sentinel
+        config_file_content = {
+            "volumeMountDirectory": self.tmp_folder_loc,
+            "toolUnderTest": [
+                "sh",
+                "-c",
+                "echo \"The African Grey has a large vocabulary\""
+            ],
+            "tag": "debian",
+            "analysisTools":
+            {
+                "clamscan": True,
+                "coreDumps": False,
+                "pspy": False,
+                "strace": False,
+                "suricata": False
+            },
+            "analysisToolTargets": [
+                "/vol/extra-test-dir",
+                "/vol/extra-test-file",
+                "/vol/nonexisting-dir"
+            ],
+            "reportFormat": "markdown"
+        }
+
+        path_to_test_config_file = os.path.join(self.tmp_folder_loc, "test-config.json")
+        with open(path_to_test_config_file, "w") as test_config_file:
+            json.dump(config_file_content, test_config_file, indent=4)
+
+        # Create a dirty words list and some test files with suspicious strings
+        with open(os.path.join(self.tmp_folder_loc, "wordlist"), "w") as f:
+            f.write("macaw\nAfrican Grey\ncockatoo\ncaique\n")
+
+        with open(os.path.join(self.tmp_folder_loc, "extra-test-file"), "w") as f:
+            f.write("The macaw flew the coop!")
+
+        new_file_target_dir = os.path.join(self.tmp_folder_loc, "extra-test-dir")
+        os.mkdir(new_file_target_dir)
+        with open(os.path.join(new_file_target_dir, "file1"), "w") as f:
+            f.write("mammal: mouse\nbird: cockatoo\nfish: shark\n")
+
+        sessionExpectingSuccess = run(['./silentsentinel.sh', '-c', path_to_test_config_file])
+        self.assertEqual(sessionExpectingSuccess.returncode, 0, "Silent Sentinel returned an unexpected exit code, expecting 0 (success)")
+
+        testharness_loc = os.path.join(self.tmp_folder_loc, 'testharness')
+        report_headers_list = self.get_headers_list()
+
+        # Test that clamscan outputs correctly
+        self.assertIn('clamscan.out', os.listdir(testharness_loc), "Testing that clamscan.out is in output folder")
+        self.assertIn('clamscan.err', os.listdir(testharness_loc), "Testing that clamscan.err is in output folder")
+        self.assertNotEqual(os.stat(os.path.join(testharness_loc, "clamscan.out")).st_size, 0,
+                            "Testing that output is written to clamscan.out")
+        self.assertEqual(os.stat(os.path.join(testharness_loc, "clamscan.err")).st_size, 0,
+                         "Testing that no error is thrown to clamscan.err")
+        self.assertIn('clamscan', report_headers_list, "Testing that clamscan is in the report file")
+
+        # Test that strings outputs correctly
+        self.assertIn('strings.out', os.listdir(testharness_loc), "Testing that strings.out is in output folder")
+        self.assertIn('strings.err', os.listdir(testharness_loc), "Testing that strings.err is in output folder")
+        with open(os.path.join(testharness_loc, 'strings.out'), "r") as stringsoutfile:
+            stringsoutcontent = stringsoutfile.read()
+            self.assertIn('bird: cockatoo', stringsoutcontent, "Testing that strings.out had the detected line")
+            self.assertIn('The macaw flew the coop!', stringsoutcontent, "Testing that strings.out had the detected line")
+            self.assertNotIn('The African Grey has a large vocabulary', stringsoutcontent, "Verify that the tool under test is not scanned for a dirty word entry")
+        self.assertEqual(os.stat(os.path.join(testharness_loc, "strings.err")).st_size, 0,
+                         "Testing that no error is thrown to strings.err")
 
     # Confirm that changes to PATH are registered and reported in the report generation file
     @subTestTags
@@ -458,6 +652,7 @@ class SilentSentinelTest(unittest.TestCase):
                 "echo \"# test modification\" >> /etc/crontab"
             ],
             "tag": tag,
+            "ipv6": False,
             "analysisTools":
             {
                 "clamscan": False,
@@ -472,7 +667,7 @@ class SilentSentinelTest(unittest.TestCase):
         path_to_test_config_file = os.path.join(self.tmp_folder_loc, "test-config.json")
         with open(path_to_test_config_file, "w") as test_config_file:
             json.dump(config_file_content, test_config_file, indent=4)
-        
+
         # Verify that we get an error code if we pass additional command flags along with -c path/to/config.json
         sessionExpectingFailure = run(['./silentsentinel.sh', '-c', path_to_test_config_file, '-P'])
         self.assertNotEqual(sessionExpectingFailure.returncode, 0, "Silent Sentinel returned an unexpected exit code, expecting non-zero value")
@@ -485,8 +680,6 @@ class SilentSentinelTest(unittest.TestCase):
         report_headers_list = self.get_headers_list()
 
         # Verify that the command under test ran as expected
-        self.assertNotEqual(os.stat(glob(os.path.join(testharness_loc, 'crontabs', '*.out'))[0]).st_size, 0,
-                            "Testing crontabs output to file")
         self.assertTrue(glob(os.path.join(testharness_loc, 'crontabs', '*.diff')),
                         "Testing crontabs diff file creation")
         self.assertIn('crontabs', report_headers_list,
@@ -525,7 +718,7 @@ class SilentSentinelTest(unittest.TestCase):
             self.assertFalse(current_header.startswith("coredump-strings"), f'A header starting with coredump-strings exists in the report')
 
     def test_interpretation_guide_pdf_basevol(self):
-        shutil.copy('./doc/README.md', self.tmp_folder_loc)
+        shutil.copy('./doc/interpretation-guide.md', self.tmp_folder_loc)
         session = run(['docker', 'run', '--rm', '-v', self.tmp_folder_loc + ':/vol', 'cmusei/silentsentinel-pandoc:latest', '-i'])
         self.assertEqual(session.returncode, 0, "docker run returned an unexpected exit code, expecting 0 (success)")
 
@@ -533,7 +726,7 @@ class SilentSentinelTest(unittest.TestCase):
                         "Testing existence of Interpretation Guide PDF using default volume.")
 
     def test_interpretation_guide_pdf_newvol(self):
-        shutil.copy('./doc/README.md', self.tmp_folder_loc)
+        shutil.copy('./doc/interpretation-guide.md', self.tmp_folder_loc)
         session = run(['docker', 'run', '--rm', '-v', self.tmp_folder_loc + ':/test-vol_123', 'cmusei/silentsentinel-pandoc:latest', '-i', '-v', '/test-vol_123'])
         self.assertEqual(session.returncode, 0, "docker run returned an unexpected exit code, expecting 0 (success)")
 

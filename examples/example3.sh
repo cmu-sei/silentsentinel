@@ -1,3 +1,5 @@
+#!/bin/sh
+
 # <legal>
 # Silent Sentinel
 #
@@ -24,9 +26,23 @@
 # DM25-0550
 # </legal>
 
-FROM node:bookworm
-RUN apt-get update
+# Install the tools required to compile dos2unix
+apt-get update && apt-get install -y curl gcc make po4a
 
-RUN npm i -g b3-strace-parser
+# Change to the volume mount directory where you downloaded the tarball
+cd /vol
 
-COPY generate_report.py /
+# Extract the tarball contents and move them to another location in the container
+tar -xzf ./dos2unix-7.5.2.tar.gz || exit 1
+mv dos2unix-7.5.2 /opt/dos2unix
+
+# Compile dos2unix for the target testharness architecture
+cd /opt/dos2unix
+make && make install
+
+# Run dos2unix to change the line endings of a test file
+cd
+dos2unix -n /opt/dos2unix/test/dos_dbl.txt /vol/newfile.txt
+diff /opt/dos2unix/test/dos_dbl.txt /vol/newfile.txt >> /vol/newfile-diff.txt
+
+exit 0

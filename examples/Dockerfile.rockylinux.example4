@@ -24,9 +24,30 @@
 # DM25-0550
 # </legal>
 
-FROM node:bookworm
-RUN apt-get update
+FROM golang:1.20-bullseye AS pspy-builder
+ENV CGO_ENABLED=0
+ENV GOOS=linux
+WORKDIR /
+COPY pspy /
+ARG pspy_version=unknown
+ARG pspy_commit=unknown
+RUN go build -a -ldflags "-s -w -X main.version=$pspy_version -X main.commit=$pspy_commit"' -extldflags \"-static\"' -o bin/pspy64 main.go
 
-RUN npm i -g b3-strace-parser
-
-COPY generate_report.py /
+FROM rockylinux:9
+RUN dnf -y install epel-release && crb enable && dnf -y install \
+	cronie-anacron \
+	ethtool \
+	gdb \
+	iproute \
+	iptables-nft \
+	iputils \
+	net-tools \
+	netcat \
+	procps-ng \
+	strace \
+	tcpdump \
+	python3 \
+	&& dnf clean all
+COPY --from=pspy-builder --chmod=755 /bin/pspy64 /usr/local/bin/
+COPY disk-usage-tracker.sh entrypoint.sh oneshots.sh /
+ENTRYPOINT ["/entrypoint.sh"]

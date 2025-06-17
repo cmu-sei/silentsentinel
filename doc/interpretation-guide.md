@@ -1,7 +1,7 @@
-<legal>  
+<legal>
 Silent Sentinel
 
-Copyright 2024 Carnegie Mellon University.
+Copyright 2025 Carnegie Mellon University.
 
 NO WARRANTY. THIS CARNEGIE MELLON UNIVERSITY AND SOFTWARE ENGINEERING
 INSTITUTE MATERIAL IS FURNISHED ON AN "AS-IS" BASIS. CARNEGIE MELLON
@@ -15,16 +15,14 @@ Licensed under a MIT (SEI)-style license, please see LICENSE.txt or contact
 permission@sei.cmu.edu for full terms.
 
 [DISTRIBUTION STATEMENT A] This material has been approved for public release
-and unlimited distribution.  Please see Copyright notice for non-US Government
+and unlimited distribution. Please see Copyright notice for non-US Government
 use and distribution.
 
 This Software includes and/or makes use of Third-Party Software each subject
 to its own license.
 
-DM24-1586
-</legal>  
-
-\clearpage
+DM25-0550
+</legal>
 
 # Interpretation Guide
 
@@ -79,22 +77,67 @@ To further augment Silent Sentinel's capability to detect unwanted content withi
 
 A core dump cannot be created when strace is running because gdb and strace cannot attach to the same process concurrently.
 
-There are three possible outputs of strings analysis:
+Silent Sentinel reports one of three possible outcomes of the strings analysis:
+
+1. When a _wordlist_ file is provided and a match is detected, the report will contain output like the following example:
 
 ```{.bash .numberlines}
 The strings analysis detected the following matches in the provided dirty word list:
 # macbeth was here
 ```
+*Figure 1: Sample `strings` outputs*
+
+2. When a _wordlist_ file is provided and no match is detected, the report will contain the following output:
 
 ```{.bash .numberlines}
 The strings analysis did not detect any matches in the provided dirty word list.
 ```
+*Figure 2: Sample `strings` outputs*
+
+3. When no _wordlist_ file has been provided, the report will contain the following output:
 
 ```{.bash .numberlines}
 The strings analysis was not run.
 ```
+*Figure 3: Sample `strings` outputs*
 
-*Figure 1: Sample `strings` outputs*
+### YARA
+
+[YARA](https://yara.readthedocs.io/en/stable/index.html) is a tool used to detect textual or binary patterns in target files. Its purpose is to help security analysts identify and classify malware samples. YARA identifies malware samples by matching known patterns of text strings or hexadecimal characters, matching regular expressions, counting the occurrences of string patterns, measuring the address offset of a tool under a test's entrypoint, and more. The YARA rules [documentation](https://yara.readthedocs.io/en/stable/writingrules.html) describe the full range of YARA’s capabilities and how to understand the YARA rule syntax.
+
+Silent Sentinel reports one of three possible outcomes for YARA.
+
+1. When a _rules.yar_ file is provided and a match is detected, the report will contain output like the following example, where the _rules.yar_ file contained several string patterns found in the target file:
+
+```{.bash .numberlines}
+The YARA scan detected the following match(es) in the provided rules:
+
+String_Match [author="A. Carnegie",date="2025-03-10",description="Detects for any data exfiltration or tool installation patterns"] /vol/test-yara.sh
+0x72:$Quarantine_Message1: install
+0xa3:$Quarantine_Message1: install
+0xd9:$Quarantine_Message2: Upload
+Web_URL_Match [author="A. Carnegie",date="2025-03-10",description="Detects for strings that have suspicious web URL"] /vol/test-yara.sh
+0x110:$target_website: malwarestring
+Low_Entropy [author="A. Carnegie",date="2025-03-10",description="Detects if file contents are unencrypted"] /vol/test-yara.sh
+```
+
+*Figure 4: Sample `YARA` signature match outputs*
+
+2. When a _rules.yar_ file is provided and no match is detected, the report will contain the following output:
+
+```{.bash .numberlines}
+The YARA scan did not detect any matches in the provided rules.
+```
+
+*Figure 5: Sample `YARA` signature match outputs*
+
+3. When no _rules.yar_ file has been provided, the report will contain the following output:
+
+```{.bash .numberlines}
+YARA was not run.
+```
+
+*Figure 6: Sample `YARA` signature match outputs*
 
 ### clamscan
 
@@ -132,13 +175,13 @@ Start Date: 2024:09:27 12:23:35
 End Date:   2024:09:27 12:24:15
 ```
 
-*Figure 2: sample `clamscan` Outputs*
+*Figure 7: sample `clamscan` Outputs*
 
 ### crontabs
 
 In Linux, cron jobs are used to schedule and run tasks in the operating system; these tasks are analogous to systemd timers in Linux and scheduled tasks in Windows. By monitoring the cron jobs in the testing environment through crontabs, Silent Sentinel can identify any changes to the baseline scheduled tasks. For example, the addition of a new scheduled task could indicate that the software under test is using cron jobs to persist data or define reoccurring activity. Furthermore, modification of the cron jobs could indicate that the software under test is interfering with other scheduled tasks.
 
-```{.bash .numberlines}
+```{.diff .numberlines}
 --- /vol/testharness/crontabs/2023-12-06_18-52-53.886974553.out 2023-12-06 18:52:53.909086107 +0000
 +++ /vol/testharness/crontabs/2023-12-06_18-52-53.916390934.out 2023-12-06 18:52:53.936086356 +0000
 @@ -276,0 +277,5 @@
@@ -149,23 +192,27 @@ In Linux, cron jobs are used to schedule and run tasks in the operating system; 
 +0 5 * * 1 true
 ```
 
-*Figure 3: Sample `crontabs` Output*
+*Figure 8: Sample `crontabs` Output*
 
 ### ps
 
 Silent Sentinel gathers process status information using the ps command. Not only does ps list the current running processes on the system under test, it also lists additional information about each process, such as the process identification number (PID), the amount of CPU time that the process has been running, the user that owns the process, and the name of the command that launched the process.
 
-```{.bash .numberlines}
---- /vol/testharness/ps/2023-12-06_18-47-19.208736023_filtered.out 2023-12-06 18:47:21.061940820 +0000
-+++ /vol/testharness/ps/2023-12-06_18-47-19.290718865_filtered.out 2023-12-06 18:47:21.061940820 +0000
-@@ -6,2 +6,2 @@
--root          33       8  0 18:47 ?        00:00:00 cat /run/oneshots_complete
--root          36      28  0 18:47 ?        00:00:00 ps -ef
-+root          70       8  0 18:47 ?        00:00:00 cat /run/oneshots_complete
-+root          73      28  0 18:47 ?        00:00:00 ps -ef
+```{.diff .numberlines}
+--- /vol/testharness/ps/2025-05-13_13-14-54.203998893_filtered.out      2025-05-13 13:15:19.776660593 +0000
++++ /vol/testharness/ps/2025-05-13_13-14-54.249130658_filtered.out      2025-05-13 13:15:19.777663521 +0000
+@@ -2 +2 @@
+-root           1       0 10 13:14 pts/0    00:00:00 /sbin/docker-init -- /entrypoint.sh sh -c tail -f /dev/null &
++root           1       0  8 13:14 pts/0    00:00:00 /sbin/docker-init -- /entrypoint.sh sh -c tail -f /dev/null &
+@@ -7,2 +7,3 @@
+-root          57       6  0 13:14 pts/0    00:00:00 cat /run/oneshots_complete
+-root          62      27  0 13:14 pts/0    00:00:00 ps -ef
++root          79       1  0 13:14 pts/0    00:00:00 tail -f /dev/null
++root          81       6  0 13:14 pts/0    00:00:00 cat /run/oneshots_complete
++root          86      27  0 13:14 pts/0    00:00:00 ps -ef
 ```
 
-*Figure 4: Sample `ps` Output*
+*Figure 9: Sample `ps` Output*
 
 ### pspy
 
@@ -194,7 +241,7 @@ The output of pspy may be parsed much in the same way as the output of ps: all p
 2023/12/04 18:43:11 FS:        CLOSE_NOWRITE | /usr/lib/x86_64-linux-gnu/libproc2.so.0.0.1
 ```
 
-*Figure 5: Sample `pspy` Output*
+*Figure 10: Sample `pspy` Output*
 
 ### strace
 
@@ -211,7 +258,7 @@ To enumerate all system calls, Silent Sentinel utilizes the Linux diagnostic uti
 {"syscall":"openat","args":[["AT_FDCWD"],"/lib/x86_64-linux-gnu/libc.so.6",{"name":"O_","value":["RDONLY","O_CLOEXEC"]}],"result":3,"timing":null,"pid":61,"type":"SYSCALL"}
 ```
 
-*Figure 6: Sample `strace` Output*
+*Figure 11: Sample `strace` Output*
 
 ### path
 
@@ -223,7 +270,7 @@ The PATH environment variable in Linux identifies the directories for the operat
 +/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/dummy
 ```
 
-*Figure 7: Sample `path` Output*
+*Figure 12: Sample `path` Output*
 
 ### memory statistics
 
@@ -296,7 +343,7 @@ Sources for interpreting the memory.stat data include:
 +pgactivate 33
 ```
 
-*Figure 8: Sample `memory_stat` Output*
+*Figure 13: Sample `memory_stat` Output*
 
 ### cpu statistics
 
@@ -328,7 +375,19 @@ Sources for interpreting the cpu.stat data include:
 +system_usec 316088
 ```
 
-*Figure 9: Sample `cpu_stat` Output*
+*Figure 14: Sample `cpu_stat` Output*
+
+### Disk I/O Performance
+
+Silent Sentinel measures the amount of data read from and written to hard drives. To isolate the tool under test's disk activity, Silent Sentinel uses data from `cgroups`. Docker creates dedicated cgroups for each container that it starts. Silent Sentinel analyzes only the cgroup for the testharness container so that it tracks disk I/O operations exclusively for the tool under test. Silent Sentinel does not include data from other containers or host operating system processes in the reported data.
+
+Silent Sentinel displays disk I/O performance output as a graph in the report. In the example below, the tool under test installs some Linux packages. The "Data Written to Disk" plot shows a larger amount of data than the "Data Read from Disk" plot. This difference can be explained by installing new packages on a Linux operating system with data obtained from network downloads. Each subplot’s x-axis is scaled in seconds. Each subplot’s y-axis is scaled based on appropriate human-readable data quantities. Both subplots in this example measure the data read and data written in mebibytes per second (MiB/s).
+
+Silent Sentinel plots a red-dashed line to show the scaling between the data read and data written subplots. This line is the lesser of the maximum data read rate and maximum data written rate. In this example, the maximum data read rate (4.6 MiB/s) is smaller than the data written rates, which are also measured in MiB/s.
+
+![Disk I/O Performance Graph](./ig-sample-disk-performance-graph.png)
+
+*Figure 15: Sample Graph of Disk I/O Performance*
 
 ### docker diff
 
@@ -356,7 +415,7 @@ C /var/spool/cron/crontabs
 A /var/spool/cron/crontabs/root
 ```
 
-*Figure 10: Sample `docker diff` Output*
+*Figure 16: Sample `docker diff` Output*
 
 ### netstat
 
@@ -375,7 +434,7 @@ Any changes in port usage can indicate the presence of modified system behavior 
 +tcp        0      0 0.0.0.0:8080            0.0.0.0:*               LISTEN      51/nc
 ```
 
-*Figure 11: Sample `netstat` Output*
+*Figure 17: Sample `netstat` Output*
 
 ### tcpdump
 
@@ -402,7 +461,7 @@ Silent Sentinel uses interface configuration (ifconfig) to view the status of ne
 +        TX packets 6  bytes 491 (491.0 B)
 ```
 
-*Figure 12: Sample `ifconfig` Output*
+*Figure 18: Sample `ifconfig` Output*
 
 ### iptables
 
@@ -428,7 +487,7 @@ To configure, maintain, and inspect the firewall rules of the Linux kernel, ipta
 +[2:128] -A DOCKER_OUTPUT -d 127.0.0.11/32 -p udp -m udp --dport 53 -j DNAT --to-destination 127.0.0.11:58831
 ```
 
-*Figure 13: Sample `iptables` Output*
+*Figure 19: Sample `iptables` Output*
 
 ### netflow (YAF)
 
@@ -468,14 +527,29 @@ If Silent Sentinel detects any connections to or from unexpected hosts or networ
 2023-12-04 18:43:11.784 icmp [8:0] 172.18.0.3 => 172.18.0.2 (1/84 ->) eof
 2023-12-04 18:43:11.784 icmp [0:0] 172.18.0.2 => 172.18.0.3 (1/84 ->) eof
 ```
+*Figure 20: Sample `YAF` Output*
 
-*Figure 14: Sample `YAF` Output*
+### Network Interface Bandwidth Usage
+
+Silent Sentinel measures the amount of ingress and egress network data on the testharness container at one-second intervals. By logging the testharness container's IP address, Silent Sentinel filters captured network traffic from this vantage point. Silent Sentinel graphs the captured network data to enable users to visualize patterns. For example, seeing a large amount of data or bursts of data leaving the testharness may indicate a data exfiltration attack.
+
+Silent Sentinel displays the network’s bandwidth usage as a graph in the report. In the example below, the tool under test installs some Linux packages. As expected, the inbound data plot shows a larger amount of data than the outbound data plot. Each subplot has an x-axis scaled in seconds. The y-axis of each subplot is scaled based on appropriate human-readable data rates. Inbound data in this example is measured in megabits per second (Mbps), while the outbound data is measured in kilobits per second (kbps).
+
+Silent Sentinel plots a red-dashed line to show the scaling between the inbound and outbound data rates. This line is the lesser of the maximum inbound data rate and maximum outbound data rate. In this example, the maximum outbound data rate (430.2 kbps) is much smaller than the inbound data rates, which are measured in Mbps.
+
+![Network Bandwidth Graph](./ig-sample-network-bandwidth-graph.png)
+
+*Figure 21: Sample Graph of Network Bandwidth*
 
 ### Suricata
 
 Suricata is an open source, high-performance network threat detection engine. It is widely used in network perimeter security to identify and respond to suspicious activities that pass a sensor. Suricata performs several key functions, including intrusion detection, intrusion prevention, and network security monitoring (NSM). Silent Sentinel uses Suricata to post process network traffic by interpreting pcap files using a variety of protocol-aware rules, and it can extract objects (e.g., files and certificates) that the sensor observed.
 
-Suricata's output consists of statistics and events. The statistics provide counts of common features (e.g., packets, bytes, and sessions). If the Suricata statistics output by Silent Sentinel show any alerts, the alert details may require further investigation.
+Suricata's output consists of statistics and events. The statistics provide counts of common features (e.g., packets, bytes, and sessions). The Suricata events output by Silent Sentinel show alerts that match Suricata rules. Alerts require further examination. If the Suricata events output shows any alerts, the alert details may require further investigation.
+
+#### suricata-statistics
+
+Suricata provides raw statistics for the analyzed .pcap file. These records are produced at a fixed interval (default is every 8 seconds). Here is an example from the RedLine Stealer malware sample:
 
 ```{.bash .numberlines}
 ------------------------------------------------------------------------------------
@@ -510,12 +584,50 @@ tcp.stream_depth_reached                      | Total                     | 1
 tcp.overlap                                   | Total                     | 1
 detect.alert                                  | Total                     | 5
 detect.alerts_suppressed                      | Total                     | 3
-...
+app_layer.flow.http                           | Total                     | 1
+app_layer.tx.http                             | Total                     | 4
+app_layer.flow.tls                            | Total                     | 1
+app_layer.flow.dns_udp                        | Total                     | 1
+app_layer.tx.dns_udp                          | Total                     | 2
+flow.end.state.established                    | Total                     | 1
+flow.end.state.closed                         | Total                     | 2
+flow.end.tcp_state.closed                     | Total                     | 2
+flow.mgr.full_hash_pass                       | Total                     | 1
+flow.mgr.rows_per_sec                         | Total                     | 6553
+flow.spare                                    | Total                     | 9900
+flow.mgr.rows_maxlen                          | Total                     | 1
+flow.mgr.flows_checked                        | Total                     | 3
+flow.mgr.flows_notimeout                      | Total                     | 3
+memcap_pressure                               | Total                     | 5
+memcap_pressure_max                           | Total                     | 5
+flow.recycler.recycled                        | Total                     | 1
+flow.recycler.queue_max                       | Total                     | 1
+tcp.memuse                                    | Total                     | 606208
+tcp.reassembly_memuse                         | Total                     | 114688
+flow.memuse                                   | Total                     | 7154304
 ```
 
-*Figure 15: Sample `Suricata` Statistics*
+*Figure 22: Sample `Suricata` Statistics*
 
-The Suricata events output by Silent Sentinel show alerts that match Suricata rules. Alerts require further examination.
+#### suricata-events
+
+The `suricata-events` section contains data from Suricata's "eve.json" output. Because "eve.json" data can be extensive, Silent Sentinel only displays alert and anomaly data in the report.
+
+[Alerts](https://docs.suricata.io/en/latest/output/eve/eve-json-output.html#alerts) are event records for Suricata rule matches. In the default ruleset, malware from the RedLine Stealer family has known traffic patterns. When the .pcap file is analyzed, the network interface displays behavior linked to this type of malware. Matches can be due to protocol used, known IP addresses, flow bits, etc.
+
+[Anomalies](https://docs.suricata.io/en/latest/output/eve/eve-json-output.html#anomaly) are event records when packets contain unexpected or anomalous values. Such events can include conditions like incorrect protocol values, incorrect protocol lengths, and other suspicious conditions for a packet. Other conditions might happen during a normal stream of packet data. While data packets might be benign, control sequences can have incorrect values or can occur out of an expected order.
+
+Suricata displays some high-level rule statistics before displaying the alerts and anomalies. The table below explains what each value means.
+
+| Category | Explanation | Additional Comments |
+| -------- | ----------- | ------------------- |
+| Total rules loaded | the number of Suricata rules successfully loaded when analyzing the .pcap file | this is the default ruleset provided when suricata-update runs |
+| Number of failed rules | the number of Suricata rules that failed to compile or load during setup (syntax errors) | expect this value to be 0 unless you provide additional rules beyond the default Suricata ruleset that have syntax errors |
+| Number of skipped rules | the number of Suricata rules that are valid configurations, but were excluded from actively run on the .pcap file | expect this value to be 0 unless you intentionally disable certain rules to optimize runtimes |
+
+*Figure 23: Explanation of `Suricata` Rule statistics*
+
+RedLine Stealer is a family of malware that harvests information from browsers such as saved credentials, auto-completion data, and credit card information. Here is example output when running Suricata against network traffic from a RedLine Stealer malware sample:
 
 ```{.bash .numberlines}
 -------------------------------------------------------------------------------
@@ -681,4 +793,4 @@ Alerts which match Suricata rules:
 ...
 ```
 
-*Figure 16: Sample `Suricata` Events from a RedLine Stealer example*
+*Figure 24: Sample `Suricata` Events from a RedLine Stealer example*

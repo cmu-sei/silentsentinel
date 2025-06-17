@@ -1,11 +1,10 @@
 {
-    "volumeMountDirectory": "output",
+    "volumeMountDirectory": "data_dir",
     "toolUnderTest": [
-        "sh",
-        "-c",
-        "echo \"# test modification\" >> /etc/crontab"
+        "/vol/test.py"
     ],
-    "tag": "debian",
+    "tag": "rockylinux",
+    "ipv6": false,
     "analysisTools":
     {
         "clamscan": true,
@@ -14,5 +13,6 @@
         "strace": true,
         "suricata": true
     },
+    "analysisToolTargets": [],
     "reportFormat": "all"
 }

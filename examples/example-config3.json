@@ -1,0 +1,20 @@
+{
+    "volumeMountDirectory": "data_dir",
+    "toolUnderTest": [
+        "/vol/example3.sh"
+    ],
+    "tag": "debian",
+    "ipv6": false,
+    "analysisTools":
+    {
+        "clamscan": true,
+        "coreDumps": false,
+        "pspy": false,
+        "strace": false,
+        "suricata": false
+    },
+    "analysisToolTargets": [
+        "/vol/newfile.txt"
+    ],
+    "reportFormat": "all"
+}

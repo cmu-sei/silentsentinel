@@ -1,0 +1,18 @@
+{
+    "volumeMountDirectory": "data_dir",
+    "toolUnderTest": [
+        "/vol/invoke_oneshots.sh"
+    ],
+    "tag": "debian",
+    "ipv6": false,
+    "analysisTools":
+    {
+        "clamscan": true,
+        "coreDumps": true,
+        "pspy": true,
+        "strace": false,
+        "suricata": true
+    },
+    "analysisToolTargets": [],
+    "reportFormat": "all"
+}

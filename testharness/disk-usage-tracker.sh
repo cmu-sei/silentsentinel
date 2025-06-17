@@ -1,3 +1,5 @@
+#!/bin/sh
+
 # <legal>
 # Silent Sentinel
 #
@@ -24,9 +26,19 @@
 # DM25-0550
 # </legal>
 
-FROM node:bookworm
-RUN apt-get update
+# This script saves files for the cumulative data read to and written from all hard drives
+# accessible to a container's control group (cgroup). Output is saved into a .csv file.
 
-RUN npm i -g b3-strace-parser
+echo "bytes_read/s,bytes_written/s" > /vol/testharness/diskio-output.csv
 
-COPY generate_report.py /
+while true; do
+    awk '{
+        split($2, a, "="); rbytes_sum += a[2]
+        split($3, b, "="); wbytes_sum += b[2]
+    }
+    END {
+        print rbytes_sum","wbytes_sum;
+    }' /sys/fs/cgroup/io.stat >> /vol/testharness/diskio-output.csv
+
+    sleep 1
+done

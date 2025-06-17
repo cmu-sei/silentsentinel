@@ -24,9 +24,14 @@
 # DM25-0550
 # </legal>
 
-FROM node:bookworm
-RUN apt-get update
+FROM debian:bookworm
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -y install \
+    binutils \
+    clamav \
+    yara \
+    && rm -rf /var/lib/apt/lists/* \
+    && freshclam
 
-RUN npm i -g b3-strace-parser
+COPY static-analysis.sh /
 
-COPY generate_report.py /
+ENTRYPOINT [ "/static-analysis.sh" ]

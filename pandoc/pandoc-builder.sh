@@ -2,9 +2,9 @@
 
 # <legal>
 # Silent Sentinel
-# 
-# Copyright 2024 Carnegie Mellon University.
-# 
+#
+# Copyright 2025 Carnegie Mellon University.
+#
 # NO WARRANTY. THIS CARNEGIE MELLON UNIVERSITY AND SOFTWARE ENGINEERING
 # INSTITUTE MATERIAL IS FURNISHED ON AN "AS-IS" BASIS. CARNEGIE MELLON
 # UNIVERSITY MAKES NO WARRANTIES OF ANY KIND, EITHER EXPRESSED OR IMPLIED, AS
@@ -12,18 +12,18 @@
 # OR MERCHANTABILITY, EXCLUSIVITY, OR RESULTS OBTAINED FROM USE OF THE MATERIAL.
 # CARNEGIE MELLON UNIVERSITY DOES NOT MAKE ANY WARRANTY OF ANY KIND WITH RESPECT
 # TO FREEDOM FROM PATENT, TRADEMARK, OR COPYRIGHT INFRINGEMENT.
-# 
+#
 # Licensed under a MIT (SEI)-style license, please see LICENSE.txt or contact
 # permission@sei.cmu.edu for full terms.
-# 
+#
 # [DISTRIBUTION STATEMENT A] This material has been approved for public release
-# and unlimited distribution.  Please see Copyright notice for non-US Government
+# and unlimited distribution. Please see Copyright notice for non-US Government
 # use and distribution.
-# 
+#
 # This Software includes and/or makes use of Third-Party Software each subject
 # to its own license.
-# 
-# DM24-1586
+#
+# DM25-0550
 # </legal>
 
 # assume we're building the report document unless the -i option is specified
@@ -36,7 +36,7 @@ SHAREDVOL="/vol"
 #    -i                 to build interpretation guide instead of the report
 #    -v <volume name>   to specify the name of the mounted volume
 while getopts 'v:i' OPTION ; do
-  case "${OPTION}" in 
+  case "${OPTION}" in
     i)
       BUILDDOC="interpretation"
       ;;
@@ -64,15 +64,18 @@ fi
 if [[ "${BUILDDOC}" == "report" ]] ; then
   HEADERFILE="report-pandoc-header.txt"
   OUTFILE="SilentSentinelReport"
-  INFILE=$(find "${SHAREDVOL}" -maxdepth 1 -type f -name "silentsentinel_report_*_report.md" | sort | tail -1)
-  # sample INFILE filename for report: silentsentinel_report_2024-03-20_17-05-05.200957_report.md
+  INFILE=$(find "${SHAREDVOL}" -maxdepth 1 -type f -name "silentsentinel_report_*.md" | sort | tail -1)
+  # sample INFILE filename for report: silentsentinel_report_2024-03-20_17-05-05.md
 else
   HEADERFILE="interpretation-pandoc-header.txt"
   OUTFILE="SilentSentinelInterpretationGuide"
-  INFILE=$(find "${SHAREDVOL}" -maxdepth 1 -type f -name "README.md")
+  INFILE=$(find "${SHAREDVOL}" -maxdepth 1 -type f -name "interpretation-guide.md")
 fi
 
-# Set the name of the latext template file
+# Resolve location of image files, in order to embed into generated PDFs
+sed -i "s|\\graphicspath{{.*}}|\\graphicspath{{$SHAREDVOL}}|g;" "${HEADERFILE}"
+
+# Set the name of the latex template file
 TEMPLATE="default-pandoc-latex.template"
 
 if [ -z "$INFILE" ] ; then
@@ -80,7 +83,7 @@ if [ -z "$INFILE" ] ; then
     echo "ERROR - markdown source file not found. Must mount volume containing Silent Sentinel markdown report."
     exit 1
   else
-    echo "ERROR - markdown source file not found. Must mount a volume containing README.md file."
+    echo "ERROR - markdown source file not found. Must mount a volume containing interpretation-guide.md file."
     exit 1
   fi
 else
@@ -113,7 +116,9 @@ pandoc \
   -t latex \
   --table-of-contents \
   --pdf-engine=xelatex \
+  --standalone \
   --template "${TEMPLATE}" \
+  --resource-path=.:${SHAREDVOL} \
   -o "${OUTFILE}.tex" \
   "${OUTFILE}.md"
 echo "done."

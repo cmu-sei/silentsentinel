@@ -3,7 +3,7 @@
 # <legal>
 # Silent Sentinel
 # 
-# Copyright 2024 Carnegie Mellon University.
+# Copyright 2025 Carnegie Mellon University.
 # 
 # NO WARRANTY. THIS CARNEGIE MELLON UNIVERSITY AND SOFTWARE ENGINEERING
 # INSTITUTE MATERIAL IS FURNISHED ON AN "AS-IS" BASIS. CARNEGIE MELLON
@@ -17,13 +17,13 @@
 # permission@sei.cmu.edu for full terms.
 # 
 # [DISTRIBUTION STATEMENT A] This material has been approved for public release
-# and unlimited distribution.  Please see Copyright notice for non-US Government
+# and unlimited distribution. Please see Copyright notice for non-US Government
 # use and distribution.
 # 
 # This Software includes and/or makes use of Third-Party Software each subject
 # to its own license.
 # 
-# DM24-1586
+# DM25-0550
 # </legal>
 
 if [ ! -d /vol ]; then

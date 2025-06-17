@@ -2,9 +2,9 @@
 
 # <legal>
 # Silent Sentinel
-# 
-# Copyright 2024 Carnegie Mellon University.
-# 
+#
+# Copyright 2025 Carnegie Mellon University.
+#
 # NO WARRANTY. THIS CARNEGIE MELLON UNIVERSITY AND SOFTWARE ENGINEERING
 # INSTITUTE MATERIAL IS FURNISHED ON AN "AS-IS" BASIS. CARNEGIE MELLON
 # UNIVERSITY MAKES NO WARRANTIES OF ANY KIND, EITHER EXPRESSED OR IMPLIED, AS
@@ -12,18 +12,18 @@
 # OR MERCHANTABILITY, EXCLUSIVITY, OR RESULTS OBTAINED FROM USE OF THE MATERIAL.
 # CARNEGIE MELLON UNIVERSITY DOES NOT MAKE ANY WARRANTY OF ANY KIND WITH RESPECT
 # TO FREEDOM FROM PATENT, TRADEMARK, OR COPYRIGHT INFRINGEMENT.
-# 
+#
 # Licensed under a MIT (SEI)-style license, please see LICENSE.txt or contact
 # permission@sei.cmu.edu for full terms.
-# 
+#
 # [DISTRIBUTION STATEMENT A] This material has been approved for public release
-# and unlimited distribution.  Please see Copyright notice for non-US Government
+# and unlimited distribution. Please see Copyright notice for non-US Government
 # use and distribution.
-# 
+#
 # This Software includes and/or makes use of Third-Party Software each subject
 # to its own license.
-# 
-# DM24-1586
+#
+# DM25-0550
 # </legal>
 
 import argparse
@@ -31,9 +31,10 @@ import json
 import os
 import re
 import shlex
+import shutil
 import typing
 from datetime import datetime
-from subprocess import run
+from subprocess import run, PIPE
 
 TIMESTAMP_REGEX = re.compile(r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.\d+")
 
@@ -124,7 +125,13 @@ def append_result_data_to_report(filepath: str, output_file: typing.TextIO):
         output_file.write("No changes/differences detected by this tool.\n\n")
         return
 
-    output_file.write('```{.bash .numberlines}\n')
+    if filepath.endswith('.diff'):
+        output_file.write('```{.diff .numberlines}\n')
+    elif filepath.endswith('.json'):
+        output_file.write('```{.json .numberlines}\n')
+    else:
+        output_file.write('```{.bash .numberlines}\n')
+
     with open(filepath, "r") as file:
         last_line = None
         for line in file.readlines():
@@ -136,34 +143,96 @@ def append_result_data_to_report(filepath: str, output_file: typing.TextIO):
     output_file.write('```\n\n')
 
 
+def append_plaintext_data_to_report(filepath: str, output_file: typing.TextIO):
+    """
+    Read data from a plain text file (e.g. a placeholder file), format the information,
+    and append it to the report.
+    """
+
+    with open(filepath, "r") as data_file:
+        shutil.copyfileobj(data_file, output_file)
+    output_file.write('\n\n')
+
+
+def insert_image_into_report(filepath: str, output_file: typing.TextIO, image_alt_text=""):
+    """
+    Insert an image file into the report. Images are limited to certain
+    formats with predictable behavior.
+    """
+
+    # Adjust the relative filepath of the image's location, so it can be correctly
+    # rendered by the Markdown file. The Markdown report is created up directory
+    # up from where the image files live.
+    relative_image_filepath = os.path.relpath(filepath, start=os.path.dirname(output_file.name))
+
+    # Provide a default alternative text string for an image caption
+    if not image_alt_text:
+        image_alt_text = os.path.basename(relative_image_filepath)
+
+    embedded_image_markdown = f'![{image_alt_text}]({relative_image_filepath})'
+    output_file.write(embedded_image_markdown)
+    output_file.write("\n\n")
+
+
 def create_diff_files(dir_path: str, test_tool_name: str):
     """
-    Create .diff files from an ordered list of output files in the provided directory. The ordered list of output files
-    are sorted from oldest to newest creation time, ensuring that each .diff file is an incremental step of what changed.
+    Create .diff files from an ordered list of output files/subdirectories in the provided directory.
+    The ordered list of directory items are sorted from oldest to newest creation time,
+    ensuring that each .diff file is an incremental step of what changed.
     """
 
-    file_list = list(filter(lambda file: not file.endswith('.err'), os.listdir(dir_path)))
-    if len(file_list) > 2:
-        file_list.sort()
-        for idx, path in enumerate(file_list):
-            if idx + 1 < len(file_list):
-                with open(os.path.join(dir_path, f'{test_tool_name}_{idx}.diff'), 'w') as diff_file:
-                    diff_proc = run(['diff', os.path.join(dir_path, path), os.path.join(dir_path, file_list[idx+1]),
-                                     '--unified=0', '--suppress-common-lines'],
-                                    stdout=diff_file)
+    directory_items = []
+    if test_tool_name == "crontabs":
+        # Get a list of subdirectories to compare their differences
+        directory_items = [item for item in os.listdir(dir_path) if os.path.isdir(os.path.join(dir_path, item))]
+    else:
+        # Get a list of files to compare their differences, skipping error files
+        directory_items = list(filter(lambda file: not file.endswith('.err'), os.listdir(dir_path)))
+    directory_items.sort()
 
+    # Iterate through all files to create incremental diff files
+    for idx, path in enumerate(directory_items):
+        if idx + 1 < len(directory_items):
+            with open(os.path.join(dir_path, f'{test_tool_name}_{idx}.diff'), 'w') as diff_file:
+                diff_proc = run(['diff',
+                                 '--unified=0',
+                                 '--suppress-common-lines',
+                                 '--recursive',
+                                 '--new-file',
+                                 '--text',
+                                 os.path.join(dir_path, path),
+                                 os.path.join(dir_path, directory_items[idx + 1])],
+                                stdout=PIPE,
+                                text=True)
+
+                # Remove the diff command, since it clutters the output
+                sed_proc_remove_cmd = run(['sed',
+                                           's/^diff .*$/\\n/'],
+                                          input=diff_proc.stdout,
+                                          stdout=diff_file,
+                                          text=True)
+
+    # Create an overall start-to-end diff file (irrelevant for just two files)
+    if len(directory_items) > 2:
         with open(os.path.join(dir_path, f'{test_tool_name}_start_end.diff'), 'w') as diff_start_end:
             diff_start_end_proc = run(
-                ['diff', os.path.join(dir_path, file_list[0]), os.path.join(dir_path, file_list[len(file_list) - 1]),
-                 '--unified=0', '--suppress-common-lines'],
-                stdout=diff_start_end)
+                ['diff',
+                 '--unified=0',
+                 '--suppress-common-lines',
+                 '--recursive',
+                 '--new-file',
+                 '--text',
+                 os.path.join(dir_path, directory_items[0]),
+                 os.path.join(dir_path, directory_items[len(directory_items) - 1])],
+                stdout=PIPE,
+                text=True)
 
-    elif len(file_list) == 2:
-        with open(os.path.join(dir_path, f'{test_tool_name}_0.diff'), 'w') as diff_file:
-            diff_proc = run(
-                ['diff', os.path.join(dir_path, file_list[0]), os.path.join(dir_path, file_list[1]),
-                 '--unified=0', '--suppress-common-lines'],
-                stdout=diff_file)
+            # Remove the diff command, since it clutters the output
+            sed_start_end_remove_cmd = run(['sed',
+                                            's/^diff .*$/\\n/'],
+                                           input=diff_start_end_proc.stdout,
+                                           stdout=diff_start_end,
+                                           text=True)
 
 
 def check_if_all_extension_files_empty(directory: str, file_extension: str):
@@ -249,6 +318,28 @@ def reduce_suricata_event_data(suricata_filepath: str):
             events_subset_file.write(anomaly_json_string + '\n')
 
 
+def open_report_md(vol_path: str, now: datetime):
+    try:
+        return open(f'{vol_path}/silentsentinel_report_{now.strftime("%Y-%m-%d_%H-%M-%S")}.md', "x")
+    except FileExistsError:
+        # Use of an underscore rather than a dot after seconds is important so that this case sorts after the above case
+        return open(f'{vol_path}/silentsentinel_report_{now.strftime("%Y-%m-%d_%H-%M-%S_%f")}.md', "x")
+
+
+def get_max_bandwidth_capacity(volume_path: str):
+    """
+    Read the designated file containing the testharness network interface's maximum
+    bandwidth capacity. Format a sentence explaining this and return it.
+    """
+
+    path_to_max_bandwidth_capacity_file = os.path.join(volume_path, "testharness", "testharness_max_bandwidth.txt")
+
+    with open(path_to_max_bandwidth_capacity_file, 'r') as max_bandwidth_file:
+        maximum_bandwidth_capacity = max_bandwidth_file.read().strip()
+
+    return f"The maximum bandwidth capacity of the network interface is {maximum_bandwidth_capacity}"
+
+
 def main(vol_path: str, testharness_args: typing.List[str]):
     """
     Driver method for this script, which creates a Markdown report file from the aggregated output
@@ -265,7 +356,7 @@ def main(vol_path: str, testharness_args: typing.List[str]):
         pass
 
     now = datetime.now()
-    with open(f'{vol_path}/silentsentinel_report_{now.strftime("%Y-%m-%d_%H-%M-%S.%f")}_report.md', "a") as output_file:
+    with open_report_md(vol_path, now) as output_file:
         output_file.write("# Test Detail\n\n")
 
         if silent_sentinel_config_data:
@@ -281,26 +372,27 @@ def main(vol_path: str, testharness_args: typing.List[str]):
 
         output_file.write(f'This report was generated at: {now.strftime("%Y-%m-%d %H:%M:%S.%f")}\n\n')
 
-        # Iterate through the files from each of the testing containers in the mounted volume.
-        # Read data from them to write to the report.
-        for container in os.scandir(vol_path):
-            # Skip existing reports generated in the root of the volume-mounted directory
-            if not container.is_dir():
-                continue
-
+        # Iterate through the contents of the subdirectories in the mounted volume. Data contained
+        # here is then processed and added to the report. It is assumed that anything in
+        # these directories is intentionally created by Silent Sentinel.
+        for volume_mount_subdirectory in ("testharness", "listeningpost"):
             output_file.write('\n---\n\n')
-            output_file.write(f'# Analysis of {container.name}\n\n')
+            output_file.write(f'# Analysis of {volume_mount_subdirectory}\n\n')
+
+            # Get full path to current volume mount subdirectory
+            volume_mount_subdir_path = os.path.abspath(os.path.join(vol_path, volume_mount_subdirectory))
 
             # Convert the strace results into a more parsable JSON format
-            if "strace.out" in os.listdir(container.path):
-                save_strace_data_as_json(strace_folder_path=container.path)
+            if "strace.out" in os.listdir(volume_mount_subdir_path):
+                save_strace_data_as_json(strace_folder_path=volume_mount_subdir_path)
 
             # Reduce the suricata event data to a subset
-            if "raw-suricata-events.log" in os.listdir(container.path):
-                reduce_suricata_event_data(suricata_filepath=container.path)
+            if "raw-suricata-events.log" in os.listdir(volume_mount_subdir_path):
+                reduce_suricata_event_data(suricata_filepath=volume_mount_subdir_path)
 
-            for entry in os.scandir(container.path):
+            for entry in os.scandir(volume_mount_subdir_path):
                 # Get the name of the tool for the file/directory
+                test_tool_name, test_tool_file_extension = os.path.splitext(entry.name)
                 if entry.is_dir():
                     test_tool_name = entry.name
 
@@ -331,18 +423,27 @@ def main(vol_path: str, testharness_args: typing.List[str]):
                             if os.path.splitext(current_file.name)[1] == '.diff':
                                 create_analysis_tool_report_subsection(current_file.path, output_file, test_tool_name)
                                 append_result_data_to_report(current_file.path, output_file)
-
-                elif os.path.splitext(entry.name)[1] in ('.json', '.out', '.diff'):
-                    test_tool_name = entry.name.rsplit(".", maxsplit=1)[0]
+                elif test_tool_file_extension == '.placeholder':
+                    create_analysis_tool_report_section(output_file, test_tool_name)
+                    append_plaintext_data_to_report(entry.path, output_file)
+                elif test_tool_file_extension in ('.json', '.out', '.diff'):
                     # Skip pcap files, since this data is refined through other means (e.g. suricata)
                     if test_tool_name != "pcap":
                         create_analysis_tool_report_section(output_file, test_tool_name)
                         append_result_data_to_report(entry.path, output_file)
+                elif test_tool_file_extension in ('.png', '.jpg'):
+                    create_analysis_tool_report_section(output_file, test_tool_name)
+                    alternative_text = ""
+                    if test_tool_name == "network-bandwidth-graph":
+                        alternative_text = "Network Bandwidth: " + get_max_bandwidth_capacity(vol_path)
+                    elif test_tool_name == "disk-performance-graph":
+                        alternative_text = "Disk I/O Performance"
+                    insert_image_into_report(entry.path, output_file, alternative_text)
 
 
 if __name__ == '__main__':
     top_level_description = """
-    This script collects relevant output data from the Silent Sentinel test harness, 
+    This script collects relevant output data from the Silent Sentinel test harness,
     and creates a report in Markdown format.
     """
 

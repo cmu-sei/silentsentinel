@@ -1,0 +1,21 @@
+{
+    "volumeMountDirectory": "data_dir",
+    "toolUnderTest": [
+        "sh",
+        "-c",
+        "ls",
+        "-al"
+    ],
+    "tag": "fedora",
+    "ipv6": false,
+    "analysisTools":
+    {
+        "clamscan": true,
+        "coreDumps": false,
+        "pspy": false,
+        "strace": true,
+        "suricata": true
+    },
+    "analysisToolTargets": [],
+    "reportFormat": "all"
+}

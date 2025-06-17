@@ -2,9 +2,9 @@
 
 # <legal>
 # Silent Sentinel
-# 
-# Copyright 2024 Carnegie Mellon University.
-# 
+#
+# Copyright 2025 Carnegie Mellon University.
+#
 # NO WARRANTY. THIS CARNEGIE MELLON UNIVERSITY AND SOFTWARE ENGINEERING
 # INSTITUTE MATERIAL IS FURNISHED ON AN "AS-IS" BASIS. CARNEGIE MELLON
 # UNIVERSITY MAKES NO WARRANTIES OF ANY KIND, EITHER EXPRESSED OR IMPLIED, AS
@@ -12,18 +12,18 @@
 # OR MERCHANTABILITY, EXCLUSIVITY, OR RESULTS OBTAINED FROM USE OF THE MATERIAL.
 # CARNEGIE MELLON UNIVERSITY DOES NOT MAKE ANY WARRANTY OF ANY KIND WITH RESPECT
 # TO FREEDOM FROM PATENT, TRADEMARK, OR COPYRIGHT INFRINGEMENT.
-# 
+#
 # Licensed under a MIT (SEI)-style license, please see LICENSE.txt or contact
 # permission@sei.cmu.edu for full terms.
-# 
+#
 # [DISTRIBUTION STATEMENT A] This material has been approved for public release
-# and unlimited distribution.  Please see Copyright notice for non-US Government
+# and unlimited distribution. Please see Copyright notice for non-US Government
 # use and distribution.
-# 
+#
 # This Software includes and/or makes use of Third-Party Software each subject
 # to its own license.
-# 
-# DM24-1586
+#
+# DM25-0550
 # </legal>
 
 print_usage() {
@@ -31,21 +31,24 @@ print_usage() {
   local exit_code=$2
 
   echo "$msg"
-  echo 
+  echo
   echo "Silent Sentinel Usage"
-  echo "$0 [-h] | [-c path/to/config.json] | [-C] [-P] [-S] [-U] [-d] [-r n/m/a] [-t TAG] <VOLUME_MOUNT_DIRECTORY> <TOOL_UNDER_TEST>"
-  printf '%s\n' '-c: Specify path to config.json file containing all Silent Sentinel settings'
+  echo "$0 [-h] | [-c CONFIG_FILE] | [-C] [-P] [-S] [-U] [-6] [-a ANALYSIS_TOOL_TARGET] [-d] [-r n/m/a] [-t TAG] <VOLUME_MOUNT_DIRECTORY> <TOOL_UNDER_TEST>"
+  printf '%s\n' '-c CONFIG_FILE: Specify path to JSON config file containing all Silent Sentinel settings'
   printf '%s\n' '-C: Disable clamscan'
   printf '%s\n' '-P: Disable PSPY'
   printf '%s\n' '-S: Disable STRACE'
   printf '%s\n' '-U: Disable Suricata'
+  printf '%s\n' '-6: Enable IPv6'
+  printf '%s\n' '-a: Recursively run all analysis tools against the specified file/directory. Can provide multiple -a arguments to analyze multiple locations (default, first argument of tool under test)'
   printf '%s\n' '-d: Enable analyzing string data from a core dump'
   printf '%s\n' '-r: Generate specified report formats: n - no report, m - markdown report, or a - all reports (default, markdown and pdf)'
   printf '%s\n' '-t: Run instrumentation in specified tag of the testharness and listeningpost images during runtime (default: debian)'
   printf '%s\n' '-h: Show usage documentation'
   echo
   echo "See README.md for the list of supported tags."
-  echo "To run strings analysis create a file called 'wordlist' in the directory being mounted. (One search term per line in the file)"
+  echo "To run strings analysis create a file called 'wordlist' in the volume mounted directory. (One search term per line in the file)"
+  echo "To run YARA analysis, create a file called 'rules.yar' in the volume mounted directory. (Uses YARA rules syntax)"
   exit "$exit_code"
 }
 
@@ -75,11 +78,12 @@ export core_dump_analysis_enabled=0
 export pspy_enabled=1
 export strace_enabled=1
 export suricata_enabled=1
-export kata_enabled=0
+export ipv6_enabled=0
 report_generation="a"
 export tag=debian
+declare -a analysis_tool_targets=()
 
-while getopts 'c:kt:r:SPCUdh' option; do
+while getopts 'c:6a:t:r:SPCUdh' option; do
   case $option in
     h)
       print_usage "" 0
@@ -111,16 +115,17 @@ while getopts 'c:kt:r:SPCUdh' option; do
     C)
       export clamscan_enabled=0
       ;;
+    a)
+      analysis_tool_targets+=("$OPTARG")
+      ;;
     d)
       export core_dump_analysis_enabled=1
       ;;
     U)
       export suricata_enabled=0
       ;;
-    k)
-      # Kata functionality is a beta feature and not fully functional
-      f+=(-f docker-compose.kata.yml)
-      export kata_enabled=1
+    6)
+      export ipv6_enabled=1
       ;;
     t)
       export tag=$OPTARG
@@ -165,10 +170,16 @@ if [ -n "$config_file_path" ]; then
   # Determine which services Silent Sentinel will run
   export clamscan_enabled=$(jq -r '.analysisTools.clamscan | if . then 1 else 0 end' "$config_file_path")
   export core_dump_analysis_enabled=$(jq -r '.analysisTools.coreDumps | if . then 1 else 0 end' "$config_file_path")
+  export ipv6_enabled=$(jq -r '.ipv6 | if . then 1 else 0 end' "$config_file_path")
   export pspy_enabled=$(jq -r '.analysisTools.pspy | if . then 1 else 0 end' "$config_file_path")
   export strace_enabled=$(jq -r '.analysisTools.strace | if . then 1 else 0 end' "$config_file_path")
   export suricata_enabled=$(jq -r '.analysisTools.suricata | if . then 1 else 0 end' "$config_file_path")
   export tag=$(jq -r '.tag' "$config_file_path")
+
+  # Check if there are any target files/directories that override default location
+  # for static analysis tools. If there are no entries, run the static analysis
+  # tools on the tool under test itself (1st argument of Bash array).
+  mapfile -d '' -t analysis_tool_targets < <(jq -j '.analysisToolTargets[] | . + "\u0000"' "$config_file_path")
 
   # Read format field and convert to single character command line format
   report_generation=$(jq -r '.reportFormat' "$config_file_path")
@@ -214,6 +225,10 @@ if [ ! -f "testharness/Dockerfile.$tag" ]; then
   print_usage "Error - Invalid tag $tag specified" 1
 fi
 
+if [ "$ipv6_enabled" -eq 1 ]; then
+  f+=(-f docker-compose.ipv6.yml)
+fi
+
 # Use the override Docker compose file too if it exists
 if [ -e docker-compose.override.yml ]; then
   f+=(-f docker-compose.override.yml)
@@ -229,10 +244,21 @@ docker container rm "$containername"
 $docker_compose "${f[@]}" stop listeningpost
 $docker_compose "${f[@]}" run --rm yaf
 
+# Run static analysis tools on provided target(s)
+export default_analysis_target="${tool_under_test_plus_args[0]}"
+$docker_compose "${f[@]}" run --rm staticanalysis "${analysis_tool_targets[@]}"
+
 # Run the Suricata container unless the user disables it
 if [ "$suricata_enabled" -ne 0 ]; then
   $docker_compose "${f[@]}" run --rm suricata
 fi
+
+# Analyze network data captured in .pcap file
+# and disk I/O data captured in .csv file
+$docker_compose "${f[@]}" run --rm statsgraphers /network_stats_grapher.py /vol/testharness
+
+# Analyze disk I/O data captured in .csv file
+$docker_compose "${f[@]}" run --rm statsgraphers /disk_stats_grapher.py /vol/testharness
 
 # Aggregate results into the desired report format(s)
 case $report_generation in

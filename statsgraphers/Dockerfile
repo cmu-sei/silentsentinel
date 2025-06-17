@@ -24,9 +24,7 @@
 # DM25-0550
 # </legal>
 
-FROM node:bookworm
-RUN apt-get update
-
-RUN npm i -g b3-strace-parser
-
-COPY generate_report.py /
+FROM python:3.12-bookworm
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get -y install tshark && rm -rf /var/lib/apt/lists/*
+RUN pip3 install --no-cache-dir matplotlib pandas pyshark
+COPY disk_stats_grapher.py network_stats_grapher.py /

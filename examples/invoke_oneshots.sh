@@ -1,3 +1,5 @@
+#!/bin/sh
+
 # <legal>
 # Silent Sentinel
 #
@@ -24,9 +26,13 @@
 # DM25-0550
 # </legal>
 
-FROM node:bookworm
-RUN apt-get update
+# Ensure that your tool under test commands are running before triggering a core dump
+scottish_graffiti=mac
+export scottish_graffiti="${scottish_graffiti}beth was here"
 
-RUN npm i -g b3-strace-parser
+# Trigger the oneshots; this block can be used multiple times during the execution of the tool under test
+echo go > /run/oneshots_trigger
+cat /run/oneshots_complete > /dev/null
 
-COPY generate_report.py /
+# Run any commands after invoking a core dump
+echo $scottish_graffiti

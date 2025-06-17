@@ -2,9 +2,9 @@
 
 # <legal>
 # Silent Sentinel
-# 
-# Copyright 2024 Carnegie Mellon University.
-# 
+#
+# Copyright 2025 Carnegie Mellon University.
+#
 # NO WARRANTY. THIS CARNEGIE MELLON UNIVERSITY AND SOFTWARE ENGINEERING
 # INSTITUTE MATERIAL IS FURNISHED ON AN "AS-IS" BASIS. CARNEGIE MELLON
 # UNIVERSITY MAKES NO WARRANTIES OF ANY KIND, EITHER EXPRESSED OR IMPLIED, AS
@@ -12,21 +12,21 @@
 # OR MERCHANTABILITY, EXCLUSIVITY, OR RESULTS OBTAINED FROM USE OF THE MATERIAL.
 # CARNEGIE MELLON UNIVERSITY DOES NOT MAKE ANY WARRANTY OF ANY KIND WITH RESPECT
 # TO FREEDOM FROM PATENT, TRADEMARK, OR COPYRIGHT INFRINGEMENT.
-# 
+#
 # Licensed under a MIT (SEI)-style license, please see LICENSE.txt or contact
 # permission@sei.cmu.edu for full terms.
-# 
+#
 # [DISTRIBUTION STATEMENT A] This material has been approved for public release
-# and unlimited distribution.  Please see Copyright notice for non-US Government
+# and unlimited distribution. Please see Copyright notice for non-US Government
 # use and distribution.
-# 
+#
 # This Software includes and/or makes use of Third-Party Software each subject
 # to its own license.
-# 
-# DM24-1586
+#
+# DM25-0550
 # </legal>
 
-: "${clamscan_enabled:?}" "${pspy_enabled:?}" "${strace_enabled:?}"
+: "${pspy_enabled:?}" "${strace_enabled:?}"
 
 if [ ! -d /vol ]; then
   echo 'You need to mount /vol!'
@@ -36,27 +36,36 @@ rm -rf /vol/testharness/
 mkdir /vol/testharness/
 chown "$(stat -c %u:%g /vol/)" /vol/testharness/
 
-strings_out_file=/vol/testharness/strings.out
-strings_err_file=/vol/testharness/strings.err
-if [ -f /vol/wordlist ]; then
-  echo 'The strings analysis detected the following matches in the provided dirty word list:' > $strings_out_file
-  (strings "$(command -v "$1")" | grep -Ff /vol/wordlist) >> $strings_out_file 2>$strings_err_file
-  if [ "$?" -eq 1 ]; then
-    echo 'The strings analysis did not detect any matches in the provided dirty word list.' > $strings_out_file
-  fi
-else
-  echo 'The strings analysis was not run.' > $strings_out_file
-  : > $strings_err_file
+# Store the testharness container's IP address, so we know how to later interpret the .pcap data
+testharness_ip_address=$(ip addr show eth0 | grep -o 'inet [0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+' | grep -o [0-9].*)
+echo $testharness_ip_address > /vol/testharness/testharness_ip_address.txt
+if [ "$ipv6_enabled" -ne 0 ]; then
+  testharness_ipv6_address=$(ip addr show eth0 | sed -n 's/^.*inet6 \(.*\)\/[0-9]\+ scope global.*$/\1/p')
+  echo $testharness_ipv6_address > /vol/testharness/testharness_ipv6_address.txt
 fi
 
-if [ "$clamscan_enabled" -ne 0 ]; then
-  clamscan "$(command -v "$1")" > /vol/testharness/clamscan.out 2>/vol/testharness/clamscan.err
+# Store the testharness container's maximum bandwidth capacity, so we can later interpret the .pcap data
+testharness_max_bandwidth=$(ethtool eth0 | grep 'Speed' | grep -Eo '[0-9]+[a-zA-Z/]+')
+echo $testharness_max_bandwidth > /vol/testharness/testharness_max_bandwidth.txt
+
+if [ -f /vol/custom_startup.sh ]; then
+  . /vol/custom_startup.sh
 fi
+
 tcpdump --immediate-mode -vvvnn -w /vol/testharness/tcpdump.pcap 2>/vol/testharness/tcpdump.err &
 tcpdump_pid=$!
 while [ ! -f /vol/testharness/tcpdump.pcap ]; do
   sleep 0.01
 done
+
+# Supporting v2 cgroups only, since the format is standardized
+# across host OS systems that use it.
+if [ -f /sys/fs/cgroup/io.stat ]; then
+  # Gather statistics for all disks on the testharness system
+  # Generated output files are later aggregated for report data.
+  ./disk-usage-tracker.sh &
+  disk_usage_pid=$!
+fi
 
 if [ "$pspy_enabled" -ne 0 ]; then
   mkfifo /run/pspyfifo
@@ -103,5 +112,17 @@ if [ "$pspy_enabled" -ne 0 ]; then
   fi
   wait "$pspy64_pid"
 fi
+
 kill "$tcpdump_pid"
+if [ -f /sys/fs/cgroup/io.stat ]; then
+  kill "$disk_usage_pid"
+fi
+
+if [ -f /vol/custom_shutdown.sh ]; then
+  . /vol/custom_shutdown.sh
+fi
+
 wait "$tcpdump_pid"
+if [ -f /sys/fs/cgroup/io.stat ]; then
+  wait "$disk_usage_pid"
+fi
